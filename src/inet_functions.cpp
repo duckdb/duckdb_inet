@@ -7,6 +7,7 @@
 #include "duckdb/common/operator/add.hpp"
 #include "duckdb/common/types/cast_helpers.hpp"
 #include "duckdb/common/vector_operations/generic_executor.hpp"
+#include "ipaddress.hpp"
 
 namespace duckdb {
 
@@ -17,8 +18,7 @@ namespace duckdb {
 // the compatible representation.
 using INET_TYPE = StructTypeTernary<uint8_t, hugeint_t, uint16_t>;
 
-static uhugeint_t FromCompatAddr(hugeint_t compat_addr,
-                                 IPAddressType addr_type) {
+static uhugeint_t FromCompatAddr(hugeint_t compat_addr, IPAddressType addr_type) {
   uhugeint_t retval = static_cast<uhugeint_t>(compat_addr);
   // Only flip the bit for order on IPv6 addresses. It can never be set in IPv4
   if (addr_type == IPAddressType::IP_ADDRESS_V6) {
@@ -91,8 +91,7 @@ bool INetFunctions::CastINETToVarchar(Vector &source, Vector &result,
   return true;
 }
 
-void INetFunctions::Host(DataChunk &args, ExpressionState &state,
-                         Vector &result) {
+void INetFunctions::Host(DataChunk &args, ExpressionState &state, Vector &result) {
   GenericExecutor::ExecuteUnary<INET_TYPE, PrimitiveType<string_t>>(
       args.data[0], result, args.size(), [&](INET_TYPE input) {
         auto inetType = IPAddressType(input.a_val);
@@ -106,8 +105,7 @@ void INetFunctions::Host(DataChunk &args, ExpressionState &state,
       });
 }
 
-void INetFunctions::Family(DataChunk &args, ExpressionState &state,
-                           Vector &result) {
+void INetFunctions::Family(DataChunk &args, ExpressionState &state, Vector &result) {
   GenericExecutor::ExecuteUnary<INET_TYPE, PrimitiveType<uint8_t>>(
       args.data[0], result, args.size(), [&](INET_TYPE input) {
         auto inetType = IPAddressType(input.a_val);
@@ -188,8 +186,7 @@ static INET_TYPE AddImplementation(INET_TYPE ip, hugeint_t val) {
             address_in, val);
   } else {
     address_out =
-        SubtractOperatorOverflowCheck::Operation<uhugeint_t, uhugeint_t,
-                                                 uhugeint_t>(address_in, -val);
+        SubtractOperatorOverflowCheck::Operation<uhugeint_t, uhugeint_t, uhugeint_t>(address_in, -val);
   }
 
   if (addr_type == IPAddressType::IP_ADDRESS_V4 &&
@@ -216,17 +213,14 @@ static bool ContainsImplementation(INET_TYPE ip_left, INET_TYPE ip_right) {
     IPAddress left(left_addr_type, left_addr_ip, ip_left.c_val);
     IPAddress right(right_addr_type, right_addr_ip, ip_right.c_val);
 
-    return left.Network().address >= right.Network().address &&
-           left.Broadcast().address <= right.Broadcast().address;
+    return left.Network().address >= right.Network().address && left.Broadcast().address <= right.Broadcast().address;
   }
 
   return false;
 }
 
-void INetFunctions::Subtract(DataChunk &args, ExpressionState &state,
-                             Vector &result) {
-  GenericExecutor::ExecuteBinary<INET_TYPE, PrimitiveType<hugeint_t>,
-                                 INET_TYPE>(
+void INetFunctions::Subtract(DataChunk &args, ExpressionState &state, Vector &result) {
+  GenericExecutor::ExecuteBinary<INET_TYPE, PrimitiveType<hugeint_t>, INET_TYPE>(
       args.data[0], args.data[1], result, args.size(),
       [&](INET_TYPE ip, PrimitiveType<hugeint_t> val) {
         return AddImplementation(ip, -val.val);
@@ -235,16 +229,14 @@ void INetFunctions::Subtract(DataChunk &args, ExpressionState &state,
 
 void INetFunctions::Add(DataChunk &args, ExpressionState &state,
                         Vector &result) {
-  GenericExecutor::ExecuteBinary<INET_TYPE, PrimitiveType<hugeint_t>,
-                                 INET_TYPE>(
+  GenericExecutor::ExecuteBinary<INET_TYPE, PrimitiveType<hugeint_t>, INET_TYPE>(
       args.data[0], args.data[1], result, args.size(),
       [&](INET_TYPE ip, PrimitiveType<hugeint_t> val) {
         return AddImplementation(ip, val.val);
       });
 }
 
-void INetFunctions::ContainsLeft(DataChunk &args, ExpressionState &state,
-                                 Vector &result) {
+void INetFunctions::ContainsLeft(DataChunk &args, ExpressionState &state, Vector &result) {
   GenericExecutor::ExecuteBinary<INET_TYPE, INET_TYPE, PrimitiveType<bool>>(
       args.data[0], args.data[1], result, args.size(),
       [&](INET_TYPE ip_left, INET_TYPE ip_right) {
@@ -259,6 +251,41 @@ void INetFunctions::ContainsRight(DataChunk &args, ExpressionState &state,
       [&](INET_TYPE ip_left, INET_TYPE ip_right) {
         return ContainsImplementation(ip_right, ip_left);
       });
+}
+
+void INetFunctions::ExpandCIDR(DataChunk &args, ExpressionState &state, Vector &result) {
+    auto &ipaddress_vector = args.data[0];
+    UnifiedVectorFormat ipaddress_data;
+    ipaddress_vector.ToUnifiedFormat(args.size(), ipaddress_data);
+    
+    auto &entries = StructVector::GetEntries(ipaddress_vector);
+    auto ip_type_data = FlatVector::GetData<uint8_t>(*entries[0]);
+    auto address_data = FlatVector::GetData<hugeint_t>(*entries[1]);
+    auto mask_data = FlatVector::GetData<uint16_t>(*entries[2]);
+
+    for (idx_t i = 0; i < args.size(); i++) {
+        idx_t address_idx = ipaddress_data.sel->get_index(i);
+
+        if (!ipaddress_data.validity.RowIsValid(address_idx)) {
+            result.SetValue(i, Value());
+            continue;
+        }
+
+        vector<Value> ip_list;
+        auto inet_type = LogicalType::STRUCT({
+            make_pair("ip_type", LogicalType::UTINYINT),
+            make_pair("address", LogicalType::HUGEINT),
+            make_pair("mask", LogicalType::USMALLINT)
+        });
+
+        ip_list.emplace_back(Value::STRUCT(inet_type, {
+            Value::UTINYINT(ip_type_data[address_idx]),
+            Value::HUGEINT(address_data[address_idx]),
+            Value::USMALLINT(mask_data[address_idx])
+        }));
+
+        result.SetValue(i, Value::LIST(inet_type, std::move(ip_list)));
+    }
 }
 
 } // namespace duckdb

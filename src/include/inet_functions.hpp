@@ -34,6 +34,8 @@ struct INetFunctions {
                            Vector &result);
   static void ContainsRight(DataChunk &args, ExpressionState &state,
                             Vector &result);
+  static void ExpandCIDR(DataChunk &args, ExpressionState &state, Vector &result);
+
 };
 
 } // namespace duckdb

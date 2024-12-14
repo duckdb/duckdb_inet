@@ -1,0 +1,20 @@
+{
+  "language_overrides": {
+    "C++": {
+      "language_server": {
+        "clangd": {
+          "initialization_options": {
+            "clangd": {
+              "fallbackFlags": [
+                "-I${workspaceFolder}/src/include",
+                "-I${workspaceFolder}/src",
+                "-I/usr/local/include",
+                "-std=c++17"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
