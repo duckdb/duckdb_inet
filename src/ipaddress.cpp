@@ -326,8 +326,10 @@ bool IPAddress::TryParse(string_t input, IPAddress &result,
 }
 
 bool IPAddress::IsCIDR() {
-    return (type == IPAddressType::IP_ADDRESS_V4 && mask < IPV4_DEFAULT_MASK) ||
-           (type == IPAddressType::IP_ADDRESS_V6 && mask < IPV6_DEFAULT_MASK);
+   return (
+    (type == IPAddressType::IP_ADDRESS_V4 && mask < IPV4_DEFAULT_MASK) ||
+    (type == IPAddressType::IP_ADDRESS_V6 && mask < IPV6_DEFAULT_MASK)
+   );
 }
 
 static string ToStringIPv4(const uhugeint_t &address, const uint8_t mask) {

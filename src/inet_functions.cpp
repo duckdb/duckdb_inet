@@ -254,6 +254,30 @@ void INetFunctions::ContainsRight(DataChunk &args, ExpressionState &state,
       });
 }
 
+
+//  Expands an IP address in CIDR notation into a list of all individual IP addresses in that range.
+//
+//  For example:
+//  - "192.168.1.0/24" would expand to all IP addresses from 192.168.1.0 to 192.168.1.255
+//  - A single IP "192.168.1.1" (non-CIDR) would return just that single IP
+//
+//  @param args DataChunk containing the input INET address(es)
+//  @param state Current expression state
+//  @param result Vector to store the resulting list of expanded IP addresses
+//
+//  The function:
+//  1. Handles both IPv4 and IPv6 addresses
+//  2. For CIDR notation:
+//     - IPv4: Generates 2^(32-mask) addresses
+//     - IPv6: Generates 2^(128-mask) addresses
+//  3. For non-CIDR addresses: Returns a single-element list with the original IP
+//  4. Returns NULL for invalid inputs
+//
+//  Each resulting IP address is returned as a struct containing:
+//  - ip_type: Type of IP address (IPv4 or IPv6)
+//  - address: The actual IP address value
+//  - mask: Full host mask (32 for IPv4, 128 for IPv6)
+//
 void INetFunctions::ExpandCIDR(DataChunk & args, ExpressionState & state, Vector & result) {
   auto & ipaddress_vector = args.data[0];
   UnifiedVectorFormat ipaddress_data;
