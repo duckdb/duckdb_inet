@@ -8,6 +8,7 @@
 #include "duckdb/common/types/cast_helpers.hpp"
 #include "duckdb/common/vector_operations/generic_executor.hpp"
 #include "ipaddress.hpp"
+#include <iostream>
 
 namespace duckdb {
 
@@ -257,7 +258,7 @@ void INetFunctions::ExpandCIDR(DataChunk &args, ExpressionState &state, Vector &
     auto &ipaddress_vector = args.data[0];
     UnifiedVectorFormat ipaddress_data;
     ipaddress_vector.ToUnifiedFormat(args.size(), ipaddress_data);
-    
+
     auto &entries = StructVector::GetEntries(ipaddress_vector);
     auto ip_type_data = FlatVector::GetData<uint8_t>(*entries[0]);
     auto address_data = FlatVector::GetData<hugeint_t>(*entries[1]);
@@ -278,11 +279,55 @@ void INetFunctions::ExpandCIDR(DataChunk &args, ExpressionState &state, Vector &
             make_pair("mask", LogicalType::USMALLINT)
         });
 
-        ip_list.emplace_back(Value::STRUCT(inet_type, {
-            Value::UTINYINT(ip_type_data[address_idx]),
-            Value::HUGEINT(address_data[address_idx]),
-            Value::USMALLINT(mask_data[address_idx])
-        }));
+        auto addr_type = IPAddressType(ip_type_data[address_idx]);
+        auto addr = FromCompatAddr(address_data[address_idx], addr_type);
+        auto mask = mask_data[address_idx];
+        IPAddress inet(addr_type, addr, mask);
+
+        if (inet.IsCIDR()) {
+          std::cout << "CIDR: " << inet.ToString() << std::endl;
+            // Calculate first and last address in CIDR range
+            IPAddress network = inet.Network();
+            IPAddress broadcast = inet.Broadcast();
+            hugeint_t hosts;
+            if (addr_type == IPAddressType::IP_ADDRESS_V4) {
+                // For IPv4: 2^(32-mask) addresses
+                if (mask > 32) continue; // Invalid mask
+                hosts = hugeint_t(1) << (32 - mask);
+            } else {
+                // For IPv6: 2^(128-mask) addresses
+                if (mask > 128) continue; // Invalid mask
+                // if (mask < 64) {
+                //     // Limit expansion for very large networks
+                //     throw Exception("CIDR expansion not supported for masks < 64 in IPv6");
+                // }
+                hosts = hugeint_t(1) << (128 - mask);
+            }
+
+            // Add all addresses in the range
+            auto current = network;
+            hugeint_t one(1);
+            // while (current.address <= broadcast.address) {
+            for (hugeint_t j = 0; j < hosts && current.address <= broadcast.address; j = j + one) {
+              std::cout << "Current: " << current.ToString() << std::endl;
+              std::cout << "Broadcast: " << broadcast.ToString() << std::endl;
+              ip_list.emplace_back(Value::STRUCT(inet_type, {
+                  Value::UTINYINT(uint8_t(current.type)),
+                  Value::HUGEINT(ToCompatAddr(current.address, current.type)),
+                  Value::USMALLINT(current.mask)
+              }));
+
+              // Increment address within network bounds
+              current.address += 1;
+            }
+          } else {
+            // Just add the single IP address
+            ip_list.emplace_back(Value::STRUCT(inet_type, {
+                Value::UTINYINT(ip_type_data[address_idx]),
+                Value::HUGEINT(address_data[address_idx]),
+                Value::USMALLINT(mask_data[address_idx])
+            }));
+        }
 
         result.SetValue(i, Value::LIST(inet_type, std::move(ip_list)));
     }

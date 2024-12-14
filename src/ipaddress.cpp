@@ -325,6 +325,11 @@ bool IPAddress::TryParse(string_t input, IPAddress &result,
   return IPAddressError(input, parameters, "Expected an IP address");
 }
 
+bool IPAddress::IsCIDR() {
+    return (type == IPAddressType::IP_ADDRESS_V4 && mask < IPV4_DEFAULT_MASK) ||
+           (type == IPAddressType::IP_ADDRESS_V6 && mask < IPV6_DEFAULT_MASK);
+}
+
 static string ToStringIPv4(const uhugeint_t &address, const uint8_t mask) {
   string result;
   for (idx_t i = 0; i < 4; i++) {
