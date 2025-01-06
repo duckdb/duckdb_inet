@@ -25,7 +25,7 @@ CREATE VIEW iview AS SELECT INET '::1'
 restart
 
 #FIXME: INET needs to be explicitly autoloaded on restart
-require no_extension_autoloading
+require no_extension_autoloading "FIXME: INET needs to be explicitly autoloaded on restart"
 
 query IIIIII
 DESCRIBE tbl
